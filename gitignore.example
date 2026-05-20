@@ -1,0 +1,41 @@
+# --- GritoWeb base .gitignore (WordPress standard + Sage 11 + Lando) ---
+# Adjust per project. On Pantheon, the upstream may already track core/config;
+# do NOT blindly override an existing repo's .gitignore — merge intentionally.
+
+# OS / editor
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# Lando (keep .lando.yml in git; ignore local-only overrides)
+.lando.local.yml
+.lando/
+
+# WordPress runtime
+wp-content/uploads/
+wp-content/cache/
+wp-content/upgrade/
+wp-content/backup-db/
+wp-content/blogs.dir/
+*.log
+
+# Secrets / local config
+.env
+.env.*
+!.env.example
+wp-config-local.php
+
+# --- Sage 11 theme (wp-content/themes/<theme>/) ---
+# Track theme source; ignore build artifacts and dependencies.
+wp-content/themes/*/node_modules/
+wp-content/themes/*/vendor/
+wp-content/themes/*/public/build/
+wp-content/themes/*/public/hot
+wp-content/themes/*/dist/
+wp-content/themes/*/.env
+
+# Composer (root, if used)
+/vendor/
