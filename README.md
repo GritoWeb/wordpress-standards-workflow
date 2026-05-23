@@ -15,6 +15,7 @@ README.md                          # this file — the workflow + how to use the
 CLAUDE.md                          # the dev standard — copy to the project root
 skills/
   html-qa-smoketest/SKILL.md       # QA skill — copy to <project>/.claude/skills/
+  create-block/SKILL.md            # block scaffold skill — copy to <project>/.claude/skills/
 EXAMPLES.md                        # one complete reference block (code) for AI context
 gitignore.example                  # base .gitignore (WP + Sage 11 + Lando)
 CHANGELOG.md                       # what changed in the standards
@@ -30,6 +31,7 @@ KIT=/path/to/this/repo
 cp "$KIT/CLAUDE.md" ./CLAUDE.md
 mkdir -p .claude/skills
 cp -R "$KIT/skills/html-qa-smoketest" .claude/skills/
+cp -R "$KIT/skills/create-block" .claude/skills/
 # if the project has no .gitignore yet:
 cp "$KIT/gitignore.example" ./.gitignore
 ```

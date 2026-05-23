@@ -14,17 +14,28 @@ generate folders that match this shape.
 ```
 app/
   Blocks/
-    BlockManager.php                 # blocks list + globalAttributes + $libs + render_block filter
-  setup.php                          # bootstraps BlockManager on init
+    BlockManager.php                 # blocks list + globalAttributes (minimal)
+    BlockCategories.php              # registers the custom block category in Gutenberg
+  setup.php                          # BlockCategories::register() + vendor libs + BlockManager bootstrap
 
 resources/
   blocks/
     testimonial-carousel/            # folder name = block slug
       block.json                     # metadata; `render` points to block.php
-      block.php                      # data prep + \Roots\view(...)->render()
+      block.php                      # data prep + view(...)->render()
       block.jsx                      # editor (React, server-rendered save: null)
       block.js                       # frontend behavior (e.g. init Swiper)
       block.css                      # styles scoped under .testimonial-carousel
+      preview.svg                    # inserter-hover preview (placeholder; swap for .webp/.png if you want)
+    components/
+      backend/                       # shared JSX components used across blocks
+        ImageUploadWithHover.jsx
+        LinkPicker.jsx
+        RemoveButton.jsx
+        TabSelector.jsx
+        PaddingControls.jsx
+        padding-presets.js
+        ImagePositionControl.jsx
   views/
     blocks/
       testimonial-carousel.blade.php # view-only Blade
@@ -45,8 +56,10 @@ vite.config.js                       # discoverBlockAssets() makes block.js/.css
 | List of blocks the theme exposes | `BlockManager::$blocks` (manual list, on purpose) |
 | Attributes injected into every block (e.g. padding presets) | `BlockManager::globalAttributes()` |
 | Calling `register_block_type` for each block | `BlockManager::registerSingleBlock()` |
-| Vendor libs (Swiper etc.): inventory + versions | `BlockManager::$libs` |
-| Conditional enqueue of vendor libs (only when block is on page) | `BlockManager::enqueueBlockLibs()` via `render_block` filter |
+| Custom block category (so the team's blocks group together in the inserter) | `app/Blocks/BlockCategories.php` (class with consts `SLUG`/`TITLE` + static `register()` that hooks `block_categories_all`). Called from `setup.php`. |
+| Shared editor components (image picker, link picker, repeater tabs, delete button, padding panel, etc.) | `resources/blocks/components/backend/` (re-used by every `block.jsx`) |
+| Vendor libs registration (URL + version) | `app/setup.php` (`wp_register_script`/`wp_register_style` on `init`) |
+| Vendor libs enqueue (per-block, conditional) | `block.php` of each block that needs the lib (`wp_enqueue_script`/`wp_enqueue_style`) |
 | Per-block local assets (`block.js`, `block.css`) | Vite (`discoverBlockAssets()` in `vite.config.js`) + `@roots/vite-plugin` |
 | Data preparation/sanitization for a block | `<block>/block.php` |
 | Rendering markup | `resources/views/blocks/<slug>.blade.php` (Blade is view-only) |
@@ -59,23 +72,37 @@ vite.config.js                       # discoverBlockAssets() makes block.js/.css
 - **`{{ }}` auto-escapes** (≈ `esc_html`). The one raw output is
   `{!! wp_get_attachment_image(...) !!}` — trusted HTML from WP core.
 - **Vendor libs are downloaded into `resources/{js,css}/vendor/`** as
-  pre-built distributables. `BlockManager` registers them globally and only
-  enqueues them when a block that declares them is rendered on the page.
+  pre-built distributables. `wp_register_script`/`wp_register_style` lives
+  in `app/setup.php` (centralized inventory of URL + version). Each
+  `block.php` that needs a lib calls `wp_enqueue_script`/`wp_enqueue_style`
+  for the handle, so libs only load on pages that have those blocks.
 - **Block-local assets (`block.js`/`block.css`) are NOT in `block.json`.**
   They are discovered by `vite.config.js` and wired by `@roots/vite-plugin`.
 - **`block.json` uses `"render": "file:./block.php"`** — WP 6.1+ runs that PHP
   as the block's render. No `render_callback` is passed to `register_block_type`.
 - **Every block has a unique root class** matching its slug
   (`.testimonial-carousel`) — encapsulation scope for the styles.
+- **Shared editor components live in `resources/blocks/components/backend/`** — every
+  `block.jsx` imports `PaddingControls` from there (renders the spacing panel in
+  the sidebar); blocks with images use `ImageUploadWithHover` +
+  `ImagePositionControl`, blocks with internal/external links use `LinkPicker`
+  (which wraps Gutenberg's `LinkControl`), blocks with array attributes use
+  `TabSelector` + `RemoveButton` for the tab-style repeater. These ship with
+  the team's `create-block` skill — see `skills/create-block/templates/`.
+- **Editor layout pattern**: every block.jsx renders `<PaddingControls />`
+  (sidebar config) outside the wrapper, then a `<section>` with the dashed
+  border + bg color + `mb-10` margin to separate blocks visually. Inside the
+  section, content fields go in labeled white cards
+  (`<div className="p-3 border border-gray-300 rounded bg-white">`).
 
 ---
 
 ## `app/Blocks/BlockManager.php`
 
-Manual list of blocks (explicit > implicit), global attributes merged at
-registration, vendor libs registered globally + conditionally enqueued per
-block on render. Adding a new block = create the folder + add the slug to the
-`$blocks` array.
+Minimal manager: a flat list of block slugs, global attributes merged into
+each block at registration, nothing else. Vendor libs and their enqueue
+behavior live elsewhere (`app/setup.php` registers; `block.php` enqueues).
+Adding a new block = create the folder + add the slug to the `$blocks` array.
 
 ```php
 <?php
@@ -85,37 +112,25 @@ namespace App\Blocks;
 class BlockManager
 {
     /**
-     * Each block: optional `enqueue` listing handles from $libs.
-     * Blocks with no external lib stay as `=> []`.
+     * Folders under resources/blocks/ (each must contain a block.json).
      */
     protected array $blocks = [
-        'testimonial-carousel' => ['enqueue' => ['swiper']],
-        // 'hero'              => [],
-        // 'split-banner'      => [],
+        'testimonial-carousel',
+        // 'hero',
+        // 'split-banner',
     ];
 
     /**
-     * Block namespace (e.g., "sage/testimonial-carousel").
+     * Gutenberg block namespace — the prefix used in each block's `block.json`
+     * `name` field (e.g., "sage/<slug>"). Not used internally by BlockManager;
+     * exposed via getNamespace() so external tooling (the `create-block` skill)
+     * knows what prefix to put in new block.json files.
+     *
+     * Not the same as:
+     *   - PHP namespace `App\` (composer PSR-4 autoload, in composer.json)
+     *   - Text domain `sage` (used by __('...', 'sage') for translations)
      */
     protected string $namespace = 'sage';
-
-    /**
-     * Vendor folders (relative to the theme root).
-     */
-    protected string $vendorJs  = 'resources/js/vendor';
-    protected string $vendorCss = 'resources/css/vendor';
-
-    /**
-     * Vendored libs. `script`/`style` are filenames within $vendorJs/$vendorCss.
-     * Omit either side if the lib doesn't have it.
-     */
-    protected array $libs = [
-        'swiper' => [
-            'script'  => 'swiper-bundle.min.js',
-            'style'   => 'swiper-bundle.min.css',
-            'version' => '11.0',
-        ],
-    ];
 
     /**
      * Global attributes injected into every block at registration time.
@@ -133,39 +148,8 @@ class BlockManager
 
     public function register(): void
     {
-        $this->registerLibs();
-
-        foreach (array_keys($this->blocks) as $blockName) {
+        foreach ($this->blocks as $blockName) {
             $this->registerSingleBlock($blockName);
-        }
-
-        // Conditional enqueue: fires only when a block is actually rendered.
-        add_filter('render_block', [$this, 'enqueueBlockLibs'], 10, 2);
-    }
-
-    /**
-     * Register vendored libs globally (registration ≠ enqueue — nothing loads yet).
-     */
-    protected function registerLibs(): void
-    {
-        foreach ($this->libs as $handle => $lib) {
-            if (!empty($lib['script'])) {
-                wp_register_script(
-                    $handle,
-                    get_theme_file_uri("{$this->vendorJs}/{$lib['script']}"),
-                    [],
-                    $lib['version'] ?? null,
-                    true
-                );
-            }
-            if (!empty($lib['style'])) {
-                wp_register_style(
-                    $handle,
-                    get_theme_file_uri("{$this->vendorCss}/{$lib['style']}"),
-                    [],
-                    $lib['version'] ?? null
-                );
-            }
         }
     }
 
@@ -187,34 +171,10 @@ class BlockManager
         register_block_type($blockPath, ['attributes' => $mergedAttributes]);
     }
 
-    /**
-     * Hooked on `render_block` — fires only when WP is rendering this exact
-     * block on the current request, so the lib only loads on pages that need it.
-     */
-    public function enqueueBlockLibs(string $content, array $block): string
+    public function addBlock(string $blockName): void
     {
-        $slug = str_replace("{$this->namespace}/", '', $block['blockName'] ?? '');
-        $handles = $this->blocks[$slug]['enqueue'] ?? [];
-
-        foreach ($handles as $handle) {
-            if (!isset($this->libs[$handle])) {
-                continue;
-            }
-            if (!empty($this->libs[$handle]['script'])) {
-                wp_enqueue_script($handle);
-            }
-            if (!empty($this->libs[$handle]['style'])) {
-                wp_enqueue_style($handle);
-            }
-        }
-
-        return $content;
-    }
-
-    public function addBlock(string $blockName, array $config = []): void
-    {
-        if (!array_key_exists($blockName, $this->blocks)) {
-            $this->blocks[$blockName] = $config;
+        if (!in_array($blockName, $this->blocks, true)) {
+            $this->blocks[] = $blockName;
         }
     }
 
@@ -230,10 +190,34 @@ class BlockManager
 }
 ```
 
-## `app/setup.php` (bootstrap)
+## `app/setup.php` (custom category + vendor libs + bootstrap)
 
 ```php
-// Bootstraps the manager. register_block_type must run on/after `init`.
+/**
+ * Register the custom block category. The class encapsulates the
+ * block_categories_all filter (dedupe + priority 5). Internally calls
+ * add_filter — safe at file load.
+ */
+\App\Blocks\BlockCategories::register();
+
+/**
+ * Register vendor libs. Registration != enqueue — nothing loads here.
+ * Each block's block.php that needs a lib calls wp_enqueue_script/style
+ * for the handle when it renders, so libs only load on pages that have
+ * those blocks.
+ */
+add_action('init', function () {
+    wp_register_script('swiper',
+        get_theme_file_uri('resources/js/vendor/swiper-bundle.min.js'),
+        [], '11.0', true);
+    wp_register_style('swiper',
+        get_theme_file_uri('resources/css/vendor/swiper-bundle.min.css'),
+        [], '11.0');
+});
+
+/**
+ * Bootstrap the block manager. register_block_type must run on/after `init`.
+ */
 add_action('init', function () {
     (new \App\Blocks\BlockManager())->register();
 });
@@ -299,16 +283,32 @@ by Vite + `@roots/vite-plugin`. `render` points to the per-block PHP.
   "apiVersion": 3,
   "name": "sage/testimonial-carousel",
   "title": "Testimonial Carousel",
-  "category": "design",
+  "category": "custom-blocks",
   "icon": "format-quote",
   "description": "A Swiper-based testimonials carousel.",
   "keywords": ["testimonial", "quote", "carousel"],
   "textdomain": "sage",
   "render": "file:./block.php",
   "attributes": {
+    "isPreview": {
+      "type": "boolean",
+      "default": false
+    },
     "heading": {
       "type": "string",
       "default": ""
+    },
+    "bgImageId": {
+      "type": "number",
+      "default": 0
+    },
+    "bgImageUrl": {
+      "type": "string",
+      "default": ""
+    },
+    "bgImagePosition": {
+      "type": "string",
+      "default": "center"
     },
     "items": {
       "type": "array",
@@ -318,6 +318,11 @@ by Vite + `@roots/vite-plugin`. `render` points to the per-block PHP.
   "supports": {
     "html": false,
     "align": ["wide", "full"]
+  },
+  "example": {
+    "attributes": {
+      "isPreview": true
+    }
   }
 }
 ```
@@ -334,6 +339,11 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
+// Swiper was registered in app/setup.php; enqueue it here so it only loads
+// on pages where this block is actually rendered.
+wp_enqueue_script('swiper');
+wp_enqueue_style('swiper');
+
 /**
  * Item shape (one entry of the `items` attribute):
  *   [ 'quote' => string, 'author' => string, 'role' => string, 'imageId' => int ]
@@ -342,22 +352,25 @@ $attributes = $attributes ?? [];
 
 $items = array_map(static function (array $item): array {
     return [
-        'quote'    => $item['quote']  ?? '',
-        'author'   => $item['author'] ?? '',
-        'role'     => $item['role']   ?? '',
+        'quote'    => sanitize_text_field($item['quote']  ?? ''),
+        'author'   => sanitize_text_field($item['author'] ?? ''),
+        'role'     => sanitize_text_field($item['role']   ?? ''),
         // Editor input — coerce on the way in.
         'image_id' => isset($item['imageId']) ? absint($item['imageId']) : 0,
     ];
 }, $attributes['items'] ?? []);
 
-echo \Roots\view('blocks.testimonial-carousel', [
-    'heading' => $attributes['heading'] ?? '',
-    'items'   => $items,
+echo view('blocks.testimonial-carousel', [
+    'heading'         => sanitize_text_field($attributes['heading'] ?? ''),
+    'bgImageId'       => absint($attributes['bgImageId'] ?? 0),
+    'bgImageUrl'      => esc_url_raw($attributes['bgImageUrl'] ?? ''),
+    'bgImagePosition' => sanitize_text_field($attributes['bgImagePosition'] ?? 'center'),
+    'items'           => $items,
     // Global padding attributes injected by BlockManager::globalAttributes().
-    'paddingVertDesktop' => $attributes['paddingVertDesktop'] ?? 112,
-    'paddingVertMobile'  => $attributes['paddingVertMobile']  ?? 56,
-    'paddingXDesktop'    => $attributes['paddingXDesktop']    ?? true,
-    'paddingXMobile'     => $attributes['paddingXMobile']     ?? true,
+    'paddingVertDesktop' => absint($attributes['paddingVertDesktop'] ?? 112),
+    'paddingVertMobile'  => absint($attributes['paddingVertMobile']  ?? 56),
+    'paddingXDesktop'    => (bool) ($attributes['paddingXDesktop']   ?? true),
+    'paddingXMobile'     => (bool) ($attributes['paddingXMobile']    ?? true),
 ])->render();
 ```
 
@@ -367,33 +380,156 @@ Editor side (Gutenberg). `save: () => null` because rendering is server-side.
 
 ```jsx
 import { registerBlockType } from '@wordpress/blocks';
-import { useBlockProps, RichText, InspectorControls } from '@wordpress/block-editor';
-import { PanelBody } from '@wordpress/components';
+import {
+    useBlockProps,
+    MediaUpload,
+    MediaUploadCheck,
+    RichText,
+} from '@wordpress/block-editor';
+import { useState } from '@wordpress/element';
 import { __ } from '@wordpress/i18n';
+import { PaddingControls }       from '../components/backend/PaddingControls.jsx';
+import { ImageUploadWithHover }  from '../components/backend/ImageUploadWithHover.jsx';
+import { ImagePositionControl }  from '../components/backend/ImagePositionControl.jsx';
+import { TabSelector }           from '../components/backend/TabSelector.jsx';
+import { RemoveButton }          from '../components/backend/RemoveButton.jsx';
+import previewImage from './preview.svg';
 import metadata from './block.json';
 
 registerBlockType(metadata, {
     edit({ attributes, setAttributes }) {
-        const { heading, items } = attributes;
-        const blockProps = useBlockProps({ className: 'testimonial-carousel' });
+        const blockProps = useBlockProps();
+        const { isPreview, heading, bgImageId, bgImageUrl, bgImagePosition, items } = attributes;
+
+        // Static preview for the Gutenberg inserter hover panel.
+        if (isPreview) {
+            return (
+                <div {...blockProps}>
+                    <img
+                        src={previewImage}
+                        alt={__('Testimonial Carousel preview', 'sage')}
+                        style={{ width: '100%', height: 'auto', display: 'block', borderRadius: '8px' }}
+                    />
+                </div>
+            );
+        }
+
+        // Repeater helpers — see Phase 2 of the create-block skill for the canonical pattern.
+        const [activeIdx, setActiveIdx] = useState(0);
+        const safeItems = items || [];
+        const updateItem = (index, patch) =>
+            setAttributes({ items: safeItems.map((it, i) => i === index ? { ...it, ...patch } : it) });
+        const removeItem = (index) => {
+            setAttributes({ items: safeItems.filter((_, i) => i !== index) });
+            setActiveIdx(Math.max(0, index - 1));
+        };
+        const addItem = () => {
+            const next = [...safeItems, { quote: '', author: '', role: '', imageId: 0, imageUrl: '' }];
+            setAttributes({ items: next });
+            setActiveIdx(next.length - 1);
+        };
+
+        const active = safeItems[activeIdx];
 
         return (
-            <div {...blockProps}>
-                <InspectorControls>
-                    <PanelBody title={__('Testimonials', 'sage')} />
-                </InspectorControls>
+            <>
+                {/* Sidebar (InspectorControls) — config only. */}
+                <PaddingControls attributes={attributes} setAttributes={setAttributes} />
 
-                <RichText
-                    tagName="h2"
-                    className="testimonial-carousel__heading"
-                    value={heading}
-                    onChange={(value) => setAttributes({ heading: value })}
-                    placeholder={__('Section heading…', 'sage')}
-                />
+                {/* Editor body — content in the dashed wrapper. */}
+                <section
+                    {...blockProps}
+                    className={`${blockProps.className} mb-10 bg-gray-50 border-2 border-dashed border-gray-600 rounded-lg p-6 relative overflow-hidden`}
+                >
+                    <h3 className="text-base font-sans! font-bold mb-8 uppercase tracking-widest text-gray-500 relative z-10">
+                        Testimonial Carousel Preview
+                    </h3>
 
-                {/* Replace with a real repeater UI for `items` in production. */}
-                <p>{(items || []).length} {__('testimonials configured', 'sage')}</p>
-            </div>
+                    <div className="space-y-6 relative z-10">
+                        {/* Heading */}
+                        <div>
+                            <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Heading</label>
+                            <div className="p-3 border border-gray-300 rounded bg-white">
+                                <RichText
+                                    tagName="h2"
+                                    value={heading}
+                                    onChange={(value) => setAttributes({ heading: value })}
+                                    className="!m-0"
+                                    placeholder={__('Section heading…', 'sage')}
+                                />
+                            </div>
+                        </div>
+
+                        {/* Background image (optional) */}
+                        <div className="p-4 bg-white/50 rounded-lg border border-gray-200">
+                            <label className="text-[10px] font-bold text-gray-400 uppercase block mb-2">Background</label>
+                            <MediaUploadCheck>
+                                <ImageUploadWithHover
+                                    imageId={bgImageId}
+                                    imageUrl={bgImageUrl}
+                                    MediaUpload={MediaUpload}
+                                    onSelect={(media) => setAttributes({ bgImageId: media.id, bgImageUrl: media.url })}
+                                    onRemove={() => setAttributes({ bgImageId: 0, bgImageUrl: '' })}
+                                    height="200px"
+                                />
+                            </MediaUploadCheck>
+                            <ImagePositionControl
+                                value={bgImagePosition}
+                                onChange={(val) => setAttributes({ bgImagePosition: val })}
+                            />
+                        </div>
+
+                        {/* Slides repeater — tabs pattern */}
+                        <div className="bg-white p-6 rounded-lg border border-gray-200 shadow-sm">
+                            <TabSelector
+                                items={safeItems}
+                                activeItem={activeIdx}
+                                setActiveItem={setActiveIdx}
+                                addItem={addItem}
+                                itemLabelPrefix={__('Slide', 'sage')}
+                            />
+
+                            {active && (
+                                <div className="space-y-4">
+                                    <div>
+                                        <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Quote</label>
+                                        <div className="p-3 border border-gray-300 rounded bg-white">
+                                            <RichText
+                                                tagName="p"
+                                                value={active.quote}
+                                                onChange={(value) => updateItem(activeIdx, { quote: value })}
+                                                className="!m-0 min-h-[80px]"
+                                                placeholder={__('Enter testimonial quote…', 'sage')}
+                                            />
+                                        </div>
+                                    </div>
+
+                                    <div className="flex items-end gap-4">
+                                        <div className="flex-1">
+                                            <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Author</label>
+                                            <div className="p-2 border border-gray-300 rounded bg-white">
+                                                <RichText
+                                                    tagName="p"
+                                                    value={active.author}
+                                                    onChange={(value) => updateItem(activeIdx, { author: value })}
+                                                    className="!m-0"
+                                                    placeholder={__('Author name…', 'sage')}
+                                                />
+                                            </div>
+                                        </div>
+                                        {safeItems.length > 1 && (
+                                            <RemoveButton
+                                                label={__('Remove this slide', 'sage')}
+                                                onClick={() => removeItem(activeIdx)}
+                                            />
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </section>
+            </>
         );
     },
 
