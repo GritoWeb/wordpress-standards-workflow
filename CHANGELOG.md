@@ -2,6 +2,93 @@
 
 Notable changes to the GritoWeb WordPress standards.
 
+## 2026-05-24
+
+### Changed
+- **`skills/create-block/SKILL.md` trimmed 962 → ~620 lines** without
+  losing semantics, after a context-efficiency review:
+  - Fixed 3 stale references to `@wordpress/icons` — the package is no
+    longer required (RemoveButton was refactored to a plain `<button>`
+    pill). Removed from check 0.10, `npm install` command, and the
+    package.json notes. Memory `project-init-kit.md` aligned.
+  - Deleted Phase 3.2 ("no longer applicable" placeholder section).
+  - Deduped infra templates: `BlockManager.php` moved out of the
+    inline SKILL.md doc to `<skill>/templates/BlockManager.php`; the
+    `blocks.php` inline duplicate removed (template is the single
+    source of truth). SKILL.md just references `<skill>/templates/<file>`.
+  - Consolidated 5 idempotency tables into one decision table.
+  - Trimmed verbose "how to ask" / "show the plan" / "vendor libs"
+    duplications down to one mention each.
+  - Trimmed Behavior Rules to only the skill-specific items; the rules
+    that duplicate `CLAUDE.md` (English, no co-author, no production
+    writes, no assumptions, push back) are now referenced as a
+    one-line "live in CLAUDE.md and apply automatically".
+- **`skills/create-block/templates/BlockManager.php`** added (new file).
+  Moved out of the SKILL.md doc body to live alongside the other infra
+  templates — matches the pattern already used for `BlockCategories.php`,
+  `blocks.php`, `preview.svg`, and the 7 shared components.
+
+- **`LinkPicker` switched to native Gutenberg `LinkControl` shape.**
+  Dropped the `#opensInNewTab` URL-marker hack — the link attribute is
+  now declared as `"type": "object"` (default `{ "url": "",
+  "opensInNewTab": false }`) and the component passes `value`/`onChange`
+  straight through to `<LinkControl>`. `settings` prop forwarded
+  unchanged (default = WP's built-in `[opensInNewTab]`; callers can
+  pass `[{id:'nofollow',title:'Mark as nofollow'},...]` to extend).
+  Render side now emits **only `target="_blank"`** when the flag is
+  true — `rel="noopener"` is no longer hardcoded because WP core's
+  `wp_targeted_link_rel()` filter (priority 15 on `the_content`)
+  injects it automatically into any rendered link with `target="_blank"`.
+  Removes the stringly-typed flag bag, aligns the attribute with what
+  Gutenberg natively expects, and opens the door to `nofollow` / other
+  toggles without growing the URL. `block.php` reads
+  `$attributes['ctaLink']['url']` + `['opensInNewTab']` directly;
+  inference tables in `SKILL.md` + per-attr generation rules updated;
+  `EXAMPLES.md` description aligned.
+- **`RemoveButton` reworked** — now a red pill button matching the
+  exact visual style of the `ImageUploadWithHover` "Remove image"
+  button (white text on `#dc2626`, 4×8 padding, 4px radius, 12px /
+  weight 500 font), so the destructive surfaces in the editor share
+  one consistent look. Default label "Delete Item". Replaces the
+  earlier trash-icon button. Caller no longer fights the component's
+  sizing/positioning. Canonical placement for repeater items is the
+  **top-right of the active item's panel**
+  (`<div className="flex justify-end"><RemoveButton .../></div>`,
+  gated by `items.length > 1`), not inline with the field row. Reason:
+  the trash icon was visually noisy and competed with field controls
+  for attention; a pill-styled "Delete Item" pinned to the top-right
+  reads as a panel-level action and frees up the bottom of the form
+  for content fields.
+- **`LinkPicker` button sized to match the white-card input height**
+  (`!min-h-[46px] !px-3 !bg-white !border !border-gray-300 !rounded`).
+  A `CTA text` (plain input) + `CTA link` (LinkPicker) pair sitting
+  in a `flex gap-3` row now lines up at exactly the same height,
+  instead of the LinkPicker's WP-default ~36px sitting visibly
+  shorter than the wrapped input.
+- **Field control rule documented** in `SKILL.md` (Phase 1 attribute
+  inference) and `EXAMPLES.md` (editor layout pattern): **long copy
+  uses `<RichText>`**, **headings / labels / simple short text use a
+  plain `<input type="text">`** inside the same white-card wrapper.
+  Inline bold/italic/link in a heading or button label is almost
+  always wrong, and a single-line `<input>` has better placeholder
+  and accidental-newline behavior than `RichText`. The keyword
+  lookup table now routes `title`/`heading`/`subtitle`/`label` and
+  the button-pair text → plain input; only
+  `description`/`body`/`content`/`paragraph`/`quote`/`copy` keeps
+  `RichText`. Per-attribute-type table split `string` into two rows
+  (heading-style vs description-style) so the generated `block.jsx`
+  picks the right control per field.
+- The reference `testimonial-carousel` block in `EXAMPLES.md` updated
+  to demonstrate the new pattern end-to-end: heading + author as
+  plain inputs, quote as RichText, delete button at the top-right of
+  the active slide's panel.
+- End-to-end validated in `test-workflow` — `hero` (heading, subtitle,
+  cta text as plain inputs; cta link via LinkPicker aligned at same
+  height) and `feature-list` (heading + item title as plain inputs,
+  item description as RichText, "Delete" button top-right of the
+  active feature's panel) rebuilt and visually checked in the
+  Gutenberg editor.
+
 ## 2026-05-20
 
 ### Added

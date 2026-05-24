@@ -89,7 +89,9 @@ vite.config.js                       # discoverBlockAssets() makes block.js/.css
   `block.jsx` imports `PaddingControls` from there (renders the spacing panel in
   the sidebar); blocks with images use `ImageUploadWithHover` +
   `ImagePositionControl`, blocks with internal/external links use `LinkPicker`
-  (which wraps Gutenberg's `LinkControl`), blocks with array attributes use
+  (a thin Popover wrapper around Gutenberg's `<LinkControl>` — the link
+  attribute is stored as the **native LinkControl object** `{url, opensInNewTab}`,
+  not a stringly-typed marker), blocks with array attributes use
   `TabSelector` + `RemoveButton` for the tab-style repeater. These ship with
   the team's `create-block` skill — see `skills/create-block/templates/`.
 - **Editor layout pattern**: every block.jsx renders `<PaddingControls />`
@@ -97,6 +99,21 @@ vite.config.js                       # discoverBlockAssets() makes block.js/.css
   border + bg color + `mb-10` margin to separate blocks visually. Inside the
   section, content fields go in labeled white cards
   (`<div className="p-3 border border-gray-300 rounded bg-white">`).
+- **Field control rule**: long copy (descriptions, paragraphs, quotes)
+  uses `<RichText>` so inline bold/italic/links work; **headings,
+  labels and short single-line text use a plain `<input type="text">`**
+  inside the same white-card wrapper. Mixing bold/links into a heading
+  or button label is almost always wrong, and a single-line `<input>`
+  is friendlier for placeholder + accidental-newline behavior than
+  `RichText`. The `LinkPicker` button is sized to match that white-card
+  input height so a CTA text + CTA link pair lines up in a `flex` row.
+- **Repeater delete UI**: array repeaters using `<TabSelector>` place
+  `<RemoveButton />` (red pill — same visual style as the
+  `ImageUploadWithHover` "Remove image" button: white text on `#dc2626`,
+  4×8 padding, 4px radius; default label "Delete Item") in a
+  `<div className="flex justify-end">` at the **top of the active
+  item's panel**, gated by `items.length > 1`. No trash icon, no
+  inline-with-fields placement.
 
 ---
 
@@ -480,16 +497,16 @@ registerBlockType(metadata, {
                     </h3>
 
                     <div className="space-y-6 relative z-10">
-                        {/* Heading */}
+                        {/* Heading — short text → plain input */}
                         <div>
                             <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Heading</label>
                             <div className="p-3 border border-gray-300 rounded bg-white">
-                                <RichText
-                                    tagName="h2"
+                                <input
+                                    type="text"
                                     value={heading}
-                                    onChange={(value) => setAttributes({ heading: value })}
-                                    className="!m-0"
+                                    onChange={(e) => setAttributes({ heading: e.target.value })}
                                     placeholder={__('Section heading…', 'sage')}
+                                    className="w-full border-0 outline-none m-0 p-0 bg-transparent text-base text-gray-900 placeholder:text-gray-400"
                                 />
                             </div>
                         </div>
@@ -525,6 +542,17 @@ registerBlockType(metadata, {
 
                             {active && (
                                 <div className="space-y-4">
+                                    {/* Delete pill (same style as the ImageUploadWithHover "Remove image" button) — top-right of the active item's panel */}
+                                    {safeItems.length > 1 && (
+                                        <div className="flex justify-end">
+                                            <RemoveButton
+                                                confirmMessage={__('Remove this slide?', 'sage')}
+                                                onClick={() => removeItem(activeIdx)}
+                                            />
+                                        </div>
+                                    )}
+
+                                    {/* Quote — long copy → RichText */}
                                     <div>
                                         <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Quote</label>
                                         <div className="p-3 border border-gray-300 rounded bg-white">
@@ -538,25 +566,18 @@ registerBlockType(metadata, {
                                         </div>
                                     </div>
 
-                                    <div className="flex items-end gap-4">
-                                        <div className="flex-1">
-                                            <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Author</label>
-                                            <div className="p-2 border border-gray-300 rounded bg-white">
-                                                <RichText
-                                                    tagName="p"
-                                                    value={active.author}
-                                                    onChange={(value) => updateItem(activeIdx, { author: value })}
-                                                    className="!m-0"
-                                                    placeholder={__('Author name…', 'sage')}
-                                                />
-                                            </div>
-                                        </div>
-                                        {safeItems.length > 1 && (
-                                            <RemoveButton
-                                                label={__('Remove this slide', 'sage')}
-                                                onClick={() => removeItem(activeIdx)}
+                                    {/* Author — short text → plain input */}
+                                    <div>
+                                        <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Author</label>
+                                        <div className="p-3 border border-gray-300 rounded bg-white">
+                                            <input
+                                                type="text"
+                                                value={active.author}
+                                                onChange={(e) => updateItem(activeIdx, { author: e.target.value })}
+                                                placeholder={__('Author name…', 'sage')}
+                                                className="w-full border-0 outline-none m-0 p-0 bg-transparent text-base text-gray-900 placeholder:text-gray-400"
                                             />
-                                        )}
+                                        </div>
                                     </div>
                                 </div>
                             )}

@@ -1,14 +1,20 @@
-import { Button } from '@wordpress/components';
-import { trash } from '@wordpress/icons';
 import { __ } from '@wordpress/i18n';
 
 /**
- * Icon-only delete button used across all blocks.
- * Transparent background, gray icon turning red on hover, native
- * window.confirm() dialog before firing onClick.
+ * Destructive pill button — visually matches the "Remove image" button
+ * inside ImageUploadWithHover (white text on red `#dc2626`, 4×8 padding,
+ * 4px radius, 12px / 500 weight). Native `window.confirm()` gate before
+ * firing `onClick`.
+ *
+ * Canonical placement for repeater items (TabSelector) is the top-right
+ * of the active item's panel:
+ *
+ *   <div className="flex justify-end mb-2">
+ *     <RemoveButton onClick={() => removeItem(activeIdx)} />
+ *   </div>
  */
 export function RemoveButton({
-    label = 'Delete',
+    label = __('Delete Item', 'sage'),
     confirmMessage,
     onClick,
     disabled = false,
@@ -17,21 +23,33 @@ export function RemoveButton({
 }) {
     const handleClick = (e) => {
         e.stopPropagation();
-        const message = confirmMessage ?? __(`${label}?`, 'sage');
+        const message = confirmMessage ?? `${label}?`;
         if (window.confirm(message)) {
             onClick();
         }
     };
 
     return (
-        <Button
-            icon={trash}
-            label={label}
-            showTooltip
+        <button
+            type="button"
             onClick={handleClick}
             disabled={disabled}
-            className={`!bg-transparent hover:!bg-transparent !text-gray-400 hover:!text-red-700 !border-0 !shadow-none !p-0 !w-7 !h-7 !flex !items-center !justify-center transition-colors ${className}`}
+            aria-label={label}
+            className={className}
+            style={{
+                color: '#ffffff',
+                border: 'none',
+                padding: '4px 8px',
+                borderRadius: '4px',
+                background: '#dc2626',
+                cursor: disabled ? 'not-allowed' : 'pointer',
+                fontSize: '12px',
+                fontWeight: 500,
+                opacity: disabled ? 0.5 : 1,
+            }}
             {...rest}
-        />
+        >
+            {label}
+        </button>
     );
 }

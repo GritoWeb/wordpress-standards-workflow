@@ -3,14 +3,29 @@ import { useState } from '@wordpress/element';
 import { Button, Popover } from '@wordpress/components';
 
 /**
- * Link selector using Gutenberg's stock <LinkControl> in a <Popover>.
- * Supports internal pages (via post search), external URLs, and
- * "Open in new tab" — the new-tab flag is encoded into the URL itself
- * via the `#opensInNewTab` marker so the URL string round-trips through
- * block.json attributes without a paired boolean attribute.
+ * Link picker wrapping Gutenberg's stock <LinkControl> in a <Popover>.
  *
- * On the render side (block.php / Blade), strip the marker and emit
- * `target="_blank" rel="noopener noreferrer"` when present.
+ * `value` is the standard LinkControl shape — an object with at least
+ * `{ url, opensInNewTab }` (plus any extra flags exposed via `settings`,
+ * e.g. `nofollow`). Pass it through to/from a block attribute declared
+ * as `"type": "object"` in block.json.
+ *
+ * `onChange` receives the merged value object. `onRemove` resets to an
+ * empty link.
+ *
+ * `settings` is forwarded to LinkControl unchanged — pass `undefined`
+ * to use Gutenberg's default (`opensInNewTab` only), or pass an array
+ * like `[{id:'opensInNewTab',title:'Open in new tab'},{id:'nofollow',title:'Mark as nofollow'}]`
+ * to expose more toggles.
+ *
+ * Render side: emit `target="_blank"` when `opensInNewTab` is true; WP
+ * core's `wp_targeted_link_rel()` filter auto-adds `rel="noopener"` to
+ * the final output, so don't hardcode rel attributes from the block.
+ *
+ * Visual: the trigger button is sized to match the
+ * `<div className="p-3 border border-gray-300 rounded bg-white">` input
+ * wrapper used by sibling text fields (~46px), so a CTA text input and
+ * a CTA link picker line up in a `flex` row.
  */
 if (typeof window !== 'undefined' && window.HTMLElement) {
     Object.defineProperty(window.HTMLElement, Symbol.hasInstance, {
@@ -21,11 +36,17 @@ if (typeof window !== 'undefined' && window.HTMLElement) {
     });
 }
 
-export const LinkPicker = ({ url, onChange, label = '', className = '' }) => {
+export const LinkPicker = ({ value, onChange, onRemove, label = '', settings, className = '' }) => {
     const [isOpen, setIsOpen] = useState(false);
+    const url = value?.url || '';
 
-    const hasNewTab = url && url.includes('#opensInNewTab');
-    const cleanUrl = url ? url.replace('#opensInNewTab', '') : '';
+    const handleRemove = () => {
+        if (onRemove) {
+            onRemove();
+        } else {
+            onChange({ url: '', opensInNewTab: false });
+        }
+    };
 
     return (
         <div className={className} style={{ position: 'relative' }}>
@@ -38,9 +59,9 @@ export const LinkPicker = ({ url, onChange, label = '', className = '' }) => {
             <Button
                 variant="secondary"
                 onClick={() => setIsOpen(!isOpen)}
-                style={{ width: '100%', justifyContent: 'space-between' }}
+                className="!w-full !justify-between !min-h-[46px] !px-3 !text-left !bg-white !border !border-gray-300 !rounded !text-gray-700 !shadow-none hover:!bg-gray-50"
             >
-                {cleanUrl || 'Select link...'}
+                <span className="truncate">{url || 'Select link...'}</span>
             </Button>
 
             {isOpen && (
@@ -50,30 +71,10 @@ export const LinkPicker = ({ url, onChange, label = '', className = '' }) => {
                 >
                     <div style={{ padding: '16px', minWidth: '300px' }}>
                         <LinkControl
-                            value={{
-                                url: cleanUrl || '',
-                                opensInNewTab: !!hasNewTab
-                            }}
-                            onRemove={() => onChange('')}
-                            onChange={(newVal) => {
-                                let finalUrl = newVal?.url !== undefined ? newVal.url : cleanUrl;
-                                const isNewTab = newVal?.opensInNewTab !== undefined ? newVal.opensInNewTab : hasNewTab;
-
-                                if (isNewTab && finalUrl) {
-                                    if (!finalUrl.includes('#opensInNewTab')) {
-                                        finalUrl += '#opensInNewTab';
-                                    }
-                                } else {
-                                    finalUrl = finalUrl.replace('#opensInNewTab', '');
-                                }
-                                onChange(finalUrl);
-                            }}
-                            settings={[
-                                {
-                                    id: 'opensInNewTab',
-                                    title: 'Open in new tab'
-                                }
-                            ]}
+                            value={value}
+                            onRemove={handleRemove}
+                            onChange={(newVal) => onChange({ ...value, ...newVal })}
+                            settings={settings}
                         />
                     </div>
                 </Popover>
