@@ -89,6 +89,53 @@ Notable changes to the GritoWeb WordPress standards.
   field in `block.json`; and a short-circuit at the top of `edit()` that
   returns only the SVG when `isPreview === true`. Devs can swap the file
   for a real `.webp`/`.png` later — the wiring stays.
+- **Block bootstrap centralized in `app/blocks.php`** — replaces putting
+  `BlockCategories::register()` and the `BlockManager` `init` action in
+  `setup.php`/`filters.php`. Loaded by `functions.php`'s
+  `collect(['setup', 'filters', 'blocks'])` (Sage's "categorically named
+  theme files" mechanism). `setup.php` and `filters.php` go back to their
+  vanilla Sage roles. Vendor libs still live in `setup.php` since they're
+  theme-level asset registration, not block bootstrap. The new
+  `skills/create-block/templates/blocks.php` is copied during Phase 0
+  bootstrap; Phase 0 also edits `functions.php` to add `'blocks'` to the
+  `collect` array, or bails if `functions.php` doesn't use that pattern.
+- **Phase 0 idempotency + per-file divergence heuristic** documented in
+  `SKILL.md`. Each create/modify target (`app/blocks.php`,
+  `functions.php`, `vite.config.js`, `editor.js`, `app.css`) has an
+  explicit table of detected states → action (skip if already wired;
+  apply if missing and stock-Sage shape; bail with diagnostic if shape
+  diverges). Makes re-invocation safe (no duplicate code) and prevents
+  silent breakage when the dev's files have unusual shapes.
+- **`@wordpress/icons` added to required devDeps** (Phase 0 check 0.10).
+  Surfaced during end-to-end test of the skill: `RemoveButton.jsx`
+  (shared component) imports `trash` from `@wordpress/icons`, and
+  `@roots/vite-plugin`'s `wordpressPlugin()` doesn't externalize the
+  `icons` package (only `blocks`, `block-editor`, `components`, `element`,
+  `i18n`, `dom-ready`, `hooks`). Build fails with `failed to resolve
+  import "@wordpress/icons"` until installed. Templates section's
+  `npm install` command updated; Group B description in Bootstrap UX
+  updated; Phase 0 check 0.10 expanded with the rationale.
+- **End-to-end skill validation** in `test-workflow` — created `hero`
+  (heading, subtitle, bg image, CTA link) and `feature-list` (heading +
+  array of items via TabSelector) blocks following the canonical
+  pattern; inserted into the Sample Page via `wp post update`. All 3
+  blocks (`hero`, `feature-list`, `test-block`) render server-side
+  correctly; Chrome accessibility tree confirms markup; no console
+  errors; inserter shows "Custom Blocks" category with preview SVGs on
+  hover. Confirms the whole pipeline (Phase 0 infra → block files →
+  BlockManager registration → Vite build → server render via Blade) is
+  consistent end-to-end.
+- **Attribute type inference** documented in Phase 1 of `SKILL.md`.
+  New subsection "Attribute type inference (description → type +
+  control)" with: (a) keyword lookup table covering string / number /
+  boolean / array / image / link / color / video / alignment / layout
+  attributes plus the editor control to render for each; (b) special
+  expansion rules (image keyword → `Id`+`Url` pair; "bg image" → also
+  `Position`; "button"/"cta" alone → `Text`+`Link` pair; array with
+  sub-fields → recurse inference per sub-field); (c) ambiguity rule —
+  ask before guessing when the description hits multiple categories or
+  none; (d) "show the inferred plan" pre-write gate so the dev can
+  override any inference without back-and-forth.
 
 ## 2026-05-18
 

@@ -16,7 +16,9 @@ app/
   Blocks/
     BlockManager.php                 # blocks list + globalAttributes (minimal)
     BlockCategories.php              # registers the custom block category in Gutenberg
-  setup.php                          # BlockCategories::register() + vendor libs + BlockManager bootstrap
+  blocks.php                         # block bootstrap (BlockCategories::register + BlockManager init action)
+  setup.php                          # theme supports + vendor libs (vanilla Sage role; no block code here)
+  filters.php                        # WP filters (vanilla Sage role)
 
 resources/
   blocks/
@@ -56,7 +58,8 @@ vite.config.js                       # discoverBlockAssets() makes block.js/.css
 | List of blocks the theme exposes | `BlockManager::$blocks` (manual list, on purpose) |
 | Attributes injected into every block (e.g. padding presets) | `BlockManager::globalAttributes()` |
 | Calling `register_block_type` for each block | `BlockManager::registerSingleBlock()` |
-| Custom block category (so the team's blocks group together in the inserter) | `app/Blocks/BlockCategories.php` (class with consts `SLUG`/`TITLE` + static `register()` that hooks `block_categories_all`). Called from `setup.php`. |
+| Block bootstrap (centralizes block-related wiring) | `app/blocks.php` — calls `BlockCategories::register()` and the BlockManager `init` action. Loaded by `functions.php` via `collect(['setup', 'filters', 'blocks'])` (Sage's "categorically named theme files" mechanism). |
+| Custom block category (so the team's blocks group together in the inserter) | `app/Blocks/BlockCategories.php` (class with consts `SLUG`/`TITLE` + static `register()` that hooks `block_categories_all`). Called from `app/blocks.php`. |
 | Shared editor components (image picker, link picker, repeater tabs, delete button, padding panel, etc.) | `resources/blocks/components/backend/` (re-used by every `block.jsx`) |
 | Vendor libs registration (URL + version) | `app/setup.php` (`wp_register_script`/`wp_register_style` on `init`) |
 | Vendor libs enqueue (per-block, conditional) | `block.php` of each block that needs the lib (`wp_enqueue_script`/`wp_enqueue_style`) |
@@ -190,16 +193,54 @@ class BlockManager
 }
 ```
 
-## `app/setup.php` (custom category + vendor libs + bootstrap)
+## `app/blocks.php` (block bootstrap)
+
+Central block-bootstrap file. Loaded by `functions.php` via Sage's
+`collect([...])` mechanism — keeps `setup.php`/`filters.php` vanilla
+and makes the block lifecycle discoverable in one place.
 
 ```php
-/**
- * Register the custom block category. The class encapsulates the
- * block_categories_all filter (dedupe + priority 5). Internally calls
- * add_filter — safe at file load.
- */
-\App\Blocks\BlockCategories::register();
+<?php
 
+namespace App;
+
+use App\Blocks\BlockCategories;
+use App\Blocks\BlockManager;
+
+// Register the custom block category (filter — fires before init).
+BlockCategories::register();
+
+// Register all blocks once WP is ready.
+add_action('init', function () {
+    (new BlockManager())->register();
+});
+```
+
+For this file to load, `functions.php` must include `'blocks'` in its
+`collect([...])` array:
+
+```diff
+-collect(['setup', 'filters'])
++collect(['setup', 'filters', 'blocks'])
+     ->each(function ($file) {
+         if (! locate_template($file = "app/{$file}.php", true, true)) {
+             // ...
+         }
+     });
+```
+
+Without `'blocks'` in the array, the file is never required and no
+blocks register.
+
+## `app/setup.php` (vendor libs — vanilla Sage role)
+
+`setup.php` keeps its stock Sage role: theme supports, nav menus,
+sidebars, and theme-level asset registration. **No block-related code
+here** — block bootstrap moved to `app/blocks.php`. Vendor libs still
+live in `setup.php` since they're theme-level (registered globally,
+enqueued per-block):
+
+```php
 /**
  * Register vendor libs. Registration != enqueue — nothing loads here.
  * Each block's block.php that needs a lib calls wp_enqueue_script/style
@@ -213,13 +254,6 @@ add_action('init', function () {
     wp_register_style('swiper',
         get_theme_file_uri('resources/css/vendor/swiper-bundle.min.css'),
         [], '11.0');
-});
-
-/**
- * Bootstrap the block manager. register_block_type must run on/after `init`.
- */
-add_action('init', function () {
-    (new \App\Blocks\BlockManager())->register();
 });
 ```
 

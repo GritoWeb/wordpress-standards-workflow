@@ -64,12 +64,13 @@ show it to the dev **before doing anything else**.
 | 0.3 | `resources/views/blocks/` exists |
 | 0.4 | `resources/js/vendor/` exists |
 | 0.5 | `resources/css/vendor/` exists |
-| 0.6 | `app/setup.php` calls `(new \App\Blocks\BlockManager())->register();` inside an `add_action('init', ...)` |
+| 0.6 | `app/blocks.php` is the **central block-bootstrap file** — must (a) exist, (b) contain top-level `BlockCategories::register();` call (it's just an `add_filter` registration, safe at file load), (c) contain `add_action('init', function () { (new BlockManager())->register(); });` (register_block_type needs `init`), (d) be loaded by `functions.php`'s `collect([...])` array (see 0.6.1). Template at `<skill>/templates/blocks.php`. Conceptually replaces putting block bootstrap in `setup.php`/`filters.php`; aligns with Sage's "categorically named theme files" mechanism. |
+| 0.6.1 | `functions.php`'s `collect([...])` array includes `'blocks'`. Sage uses `collect(['setup', 'filters', ...])` to `require` each `app/<name>.php` during boot. Without `'blocks'` in the array, `app/blocks.php` won't load and no blocks will register. If `functions.php` doesn't use the `collect([...])` pattern at all (heavily-customized theme), **bail out** — needs manual wiring. |
 | 0.7 | `vite.config.js` declares a `discoverBlockAssets()` function AND spreads `...discoverBlockAssets()` into the `laravel({ input: [...] })` plugin args |
 | 0.8 | `resources/js/editor.js` calls `import.meta.glob('../blocks/*/block.jsx', { eager: true });` |
 | 0.9 | `resources/css/app.css` has `@source "../blocks/**/*.{php,jsx}";` (so Tailwind scans block markup for utility class usage) |
-| 0.10 | `package.json` has `react@^18` AND `react-dom@^18` in `devDependencies`. **Pinned to ^18, not ^19** — React 19 breaks Gutenberg (element-symbol mismatch with WP's React 18) |
-| 0.11 | `app/Blocks/BlockCategories.php` exists AND `app/setup.php` calls `\App\Blocks\BlockCategories::register();` (anywhere — class internally hooks `block_categories_all` with dedupe + priority 5). Template at `<skill>/templates/BlockCategories.php`. **First-time bootstrap moment**: ask `"Vou criar uma categoria pros seus blocos. Quer chamar de 'Custom Blocks' (default) ou outro nome?"`. Copy the template; if the dev picked a different name, edit `BlockCategories.php` to set `TITLE` and derive `SLUG` (lowercase + hyphens). Append the `::register()` call to `setup.php`. Subsequent invocations: grep `const SLUG = '...'` from the existing file to know the slug. |
+| 0.10 | `package.json` has these `devDependencies`: `react@^18`, `react-dom@^18`, AND `@wordpress/icons`. **React pinned to ^18, not ^19** — React 19 breaks Gutenberg (element-symbol mismatch with WP's React 18). **`@wordpress/icons`** is needed because `RemoveButton.jsx` (shared component) imports `trash` from it, and `@roots/vite-plugin`'s `wordpressPlugin()` does **not** externalize the `icons` package (it only externalizes `blocks`, `block-editor`, `components`, `element`, `i18n`, `dom-ready`, `hooks`). Without it installed, Rolldown fails with `failed to resolve import "@wordpress/icons"`. Once installed, Rolldown tree-shakes — only the icons actually used get bundled (small). |
+| 0.11 | `app/Blocks/BlockCategories.php` class file exists. Template at `<skill>/templates/BlockCategories.php`. **First-time bootstrap moment**: ask `"Vou criar uma categoria pros seus blocos. Quer chamar de 'Custom Blocks' (default) ou outro nome?"`. Copy the template; if the dev picked a different name, edit `BlockCategories.php` to set `TITLE` and derive `SLUG` (lowercase + hyphens). The actual `BlockCategories::register();` call lives in `app/blocks.php` (covered by check 0.6). Subsequent invocations: grep `const SLUG = '...'` from the existing file to know the slug. |
 | 0.12 | `resources/blocks/components/backend/` exists with the canonical shared components: `ImageUploadWithHover.jsx`, `LinkPicker.jsx`, `RemoveButton.jsx`, `TabSelector.jsx`, `PaddingControls.jsx`, `padding-presets.js`, `ImagePositionControl.jsx`. These are reused by every block — image inputs, link inputs, repeater tabs, delete buttons, spacing panel. If missing: copy all 7 from `<skill>/templates/components/backend/*` in one batch under Group A (creations). |
 
 ### Compatibility warnings (do NOT auto-fix)
@@ -81,14 +82,16 @@ show it to the dev **before doing anything else**.
 
 ### Bootstrap UX
 
-If any of 0.1–0.10 fail:
+If any required check (0.1–0.12, including 0.6.1) fails:
 
 1. Tell the dev which checks failed, in a table.
 2. Split the fix list into two groups:
    - **A. Creations** — new files / new folders. Low risk, reversible by `rm`.
-   - **B. Modifications** — edits to existing files (`vite.config.js`,
-     `app/setup.php`, `resources/js/editor.js`, `resources/css/app.css`,
-     `package.json`). Higher risk.
+   - **B. Modifications** — edits to existing files (`functions.php`,
+     `vite.config.js`, `resources/js/editor.js`, `resources/css/app.css`).
+     `package.json` is **not** edited — the skill tells the dev to run
+     `npm install --save-dev react@^18.0.0 react-dom@^18.0.0 @wordpress/icons`
+     themselves. Higher risk than Group A.
 3. **Group A confirmation**: list every file/folder to be created. Ask
    "Posso criar essas Y entradas?" Y/N.
 4. **Group B confirmation**: for each file to be modified, show the diff
@@ -97,12 +100,50 @@ If any of 0.1–0.10 fail:
 5. **If the dev says no to either group: stop**. Explain politely that the
    skill needs the infra in place to continue, and the dev can run those
    edits manually before re-invoking the skill.
-6. **Divergence rule**: if any file targeted for modification has a shape
-   significantly different from what's expected (e.g. `vite.config.js`
-   doesn't use `laravel-vite-plugin`, or `setup.php` doesn't have a usable
-   anchor to append to), **bail out** with a clear message describing what
-   doesn't match. Don't try to patch blindly. The dev needs to reconcile
-   manually and re-invoke.
+### Idempotency and divergence (per-file heuristic)
+
+Phase 0 must be **re-runnable without duplicating work or breaking
+existing setup**. Before each create/modify, Read the target file and
+check the expected shape. Skip if the change is already there; bail
+with a clear diagnostic if the shape doesn't match what the skill
+knows how to edit.
+
+**`app/blocks.php`** (creation — Group A)
+
+| Detected state | Action |
+|---|---|
+| File doesn't exist | Create from `<skill>/templates/blocks.php` |
+| Exists AND contains both `BlockCategories::register()` and `add_action('init', ...)` referencing `BlockManager` | **Skip** — "already wired" |
+| Exists AND contains one of the two calls but not the other | **Bail** — "Partial wiring detected in `app/blocks.php` (found X, missing Y). Please reconcile manually before re-invoking." |
+| Exists with unrelated content (no recognizable block bootstrap) | **Bail** — "An `app/blocks.php` already exists with content I don't recognize. Move/rename it before re-invoking." |
+
+**`functions.php`** (modification — Group B)
+
+| Detected state | Action |
+|---|---|
+| `collect([...])->each(...)` pattern not found at all | **Bail** — "`functions.php` doesn't use Sage's `collect([...])` bootstrap pattern. Manual wiring needed — add `require app/blocks.php` somewhere after Acorn boots." |
+| Pattern found AND array already contains `'blocks'` | **Skip** — "already wired" |
+| Pattern found AND array missing `'blocks'` | Edit the array literal: insert `'blocks'` before the closing bracket. Preserve original formatting (single-line vs multi-line, quote style). |
+| Pattern found but uses dynamic generation (e.g., `collect($files)` where `$files` is built elsewhere) | **Bail** — "Dynamic `collect` array detected. Manual wiring needed." |
+
+**`vite.config.js`** / **`resources/js/editor.js`** / **`resources/css/app.css`** (modification — Group B)
+
+For each, grep for the expected pattern:
+- `vite.config.js` → `function discoverBlockAssets` and `...discoverBlockAssets()` inside `laravel({ input: [...] })`
+- `editor.js` → `import.meta.glob('../blocks/*/block.jsx'`
+- `app.css` → `@source "../blocks/**`
+
+| Detected state | Action |
+|---|---|
+| Pattern found | **Skip** — "already wired" |
+| Pattern not found AND file matches stock Sage shape | Apply the documented edit (see Templates section) |
+| Pattern not found AND file diverges from stock shape (custom build config, unusual plugin order, no anchor to insert) | **Bail** with a diagnostic naming the divergence |
+
+**General rule**: bailing is always better than guessing. The dev can
+fix the divergence in 30 seconds; a wrong edit can break the build
+silently for hours. Every bail message must say (a) which file, (b)
+what shape was expected, (c) what was found, (d) what the dev needs to
+do (the manual edit they would apply themselves).
 
 The infra templates to apply during bootstrap are in the **Templates**
 section at the bottom of this doc.
@@ -140,7 +181,90 @@ section at the bottom of this doc.
 |---|---|
 | **Title** | Required. If not derivable from the request, ask. |
 | **Slug** | Auto-derive from title (lowercase + hyphens). Show it in the inferred summary; dev can override. |
-| **Attributes** | **Free text** — let the dev describe fields naturally (with Figma context / image attachments / prose). Skill parses, assigns types (see Phase 2 per-attribute table), and asks only when truly ambiguous. |
+| **Attributes** | **Free text** — let the dev describe fields naturally (with Figma context / image attachments / prose). Skill parses, **infers types from keywords** (see "Attribute type inference" below), expands special pair patterns (image, button), and asks only when truly ambiguous. |
+
+### Attribute type inference (description → type + control)
+
+When the dev describes attributes in natural language ("hero with a
+heading, subtitle, background image and CTA button"), map each described
+field to a concrete attribute using the table below. The output of this
+step feeds Phase 2 directly (block.json schema, block.php sanitization,
+block.jsx editor control).
+
+#### Keyword lookup table
+
+| Dev's wording contains | Inferred type | Generated attribute(s) | Editor control |
+|---|---|---|---|
+| `title`, `heading`, `headline`, `name`, `label` | string | `<name>` | `<RichText tagName="h1\|h2">` |
+| `subtitle`, `subheading`, `tagline`, `eyebrow` | string | `<name>` | `<RichText tagName="p">` |
+| `description`, `body`, `content`, `text`, `paragraph`, `quote` | string (multi-line ok) | `<name>` | `<RichText tagName="p" min-h-[80px]>` |
+| `image`, `photo`, `picture`, `thumbnail`, `cover`, `bg`/`background image` | image **PAIR** | `<name>Id` (number) + `<name>Url` (string) | `<MediaUploadCheck><ImageUploadWithHover .../></MediaUploadCheck>`. If wording contains "background" / "bg" → also add `<name>Position` (string, default `"center"`) + render `<ImagePositionControl />` |
+| `icon` | string (Dashicon slug or arbitrary name) | `<name>` | `<TextControl>` (or `<IconPicker>` if the project ships one) |
+| `link`, `url`, `cta link`, `href` | link (string with `#opensInNewTab` marker) | `<name>` | `<LinkPicker label="..." />` |
+| `button`, `cta` (alone, no "link") | button **PAIR** | `<name>Text` (string) + `<name>Link` (string with marker) | `<RichText>` for text + `<LinkPicker>` for link |
+| `color`, `bg color`, `text color` | string (hex / palette slug) | `<name>` | `<ColorPalette>` or `<PanelColorSettings>` |
+| `size`, `width`, `height`, `count`, `amount`, plain `number` | number (unsigned) | `<name>` | `<TextControl type="number">` or `<RangeControl>` |
+| `show X`, `enable X`, `visible`, `active`, `toggle`, "is X" boolean | boolean | `<name>` | `<ToggleControl>` |
+| `list of X`, `X list`, `items`, `slides`, `cards`, `testimonials`, `features`, `points`, `steps`, `accordion items` | array | `<name>` (`items` is the conventional default for the array attr) | `<TabSelector>` + `useState(0)` for active index + per-item form (recurse: infer sub-field types from the same table) |
+| `video` + url/embed | string (URL) | `<name>Url` | `<TextControl type="url">` |
+| `alignment`, `align`, `text alignment` | string enum | `<name>` (default `"left"`) | `<AlignmentToolbar>` or `<SelectControl>` |
+| `layout`, `variant`, `style` + descriptor (e.g. "compact/full") | string enum | `<name>` | `<SelectControl options={...}>` (config — put in `InspectorControls`) |
+
+#### Special expansion rules (apply BEFORE the keyword lookup)
+
+1. **Image pair**: any image-like mention generates **two attributes** —
+   `<name>Id` (number) + `<name>Url` (string). Render via
+   `ImageUploadWithHover`. WordPress's media library gives back both
+   pieces in one call; storing the URL alongside the ID avoids hitting
+   `wp_get_attachment_url()` at render time. If the wording mentions
+   "background" or "bg", add a third attribute `<name>Position` (string,
+   default `"center"`) and render `<ImagePositionControl />` alongside.
+
+2. **Button pair**: "button" / "CTA" alone (without "link") generates
+   **two attributes** — `<name>Text` (string) + `<name>Link` (string with
+   `#opensInNewTab` marker). Render via `RichText` (text) +
+   `LinkPicker` (link).
+
+3. **Array recursion**: when the dev says "list of X with title, image,
+   and description", recurse the inference for each sub-field
+   (`title` → string, `image` → pair, `description` → string). The
+   final shape is one array attribute whose items are objects with
+   typed sub-fields. Sanitize per-sub-field in `block.php`'s
+   `array_map(...)`.
+
+#### Ambiguity → ask
+
+If the dev's wording is ambiguous, **ask before generating** rather than
+guess. Examples that need asking:
+- "image link" — is it a linked image (image pair + link) or the URL of
+  an image (single string)?
+- "X" with no matching keyword — describe what it should do, then
+  pick (or default to string).
+- An attribute named like a verb ("highlight", "feature") — likely a
+  boolean toggle, but confirm.
+
+Batch the ambiguity questions with the rest of Phase 1's gap-filling
+round (B1 from the UX section) — don't drip-feed.
+
+#### Show the inferred plan before generating
+
+After running inference on every described attribute, surface a compact
+plan to the dev:
+
+```
+Slug:     hero
+Title:    Hero
+Icon:     format-image
+Category: custom-blocks
+Attributes:
+  - heading           string             → RichText (h1)
+  - subtitle          string             → RichText (p)
+  - bgImageId/Url     image pair         → ImageUploadWithHover + ImagePositionControl
+  - ctaText/Link      button pair        → RichText + LinkPicker
+```
+
+Ask "ajustar algo (nome, tipo, controle)?" before writing files. The
+dev gets to override any inference at this gate without a back-and-forth.
 
 ### What the skill picks itself (no question)
 
@@ -338,6 +462,7 @@ afterward if they want a different category name. Structure:
 ```
 <skill>/templates/
 ├── BlockCategories.php           → copied to app/Blocks/BlockCategories.php
+├── blocks.php                    → copied to app/blocks.php (central block bootstrap)
 ├── preview.svg                   → copied per block (with __BLOCK_TITLE__ substituted)
 └── components/backend/           → copied to resources/blocks/components/backend/
     ├── ImageUploadWithHover.jsx
@@ -619,16 +744,65 @@ class BlockManager
 }
 ```
 
-#### `app/setup.php` — append at the end
+#### `app/blocks.php` — create with this content
+
+Block bootstrap lives in its own file (loaded by `functions.php`'s
+`collect([...])` array). Keeps `setup.php` / `filters.php` vanilla and
+makes the block lifecycle discoverable in one place.
 
 ```php
-/**
- * Register the custom block category. The class encapsulates the
- * block_categories_all filter (with dedupe + priority 5). Safe to call
- * at file load — it just registers the filter.
- */
-\App\Blocks\BlockCategories::register();
+<?php
 
+/**
+ * Block bootstrap.
+ *
+ * Loaded by functions.php via collect(['setup', 'filters', 'blocks']).
+ * All block-related wiring lives here:
+ *   - Custom Gutenberg category (BlockCategories)
+ *   - Per-block register_block_type calls (BlockManager)
+ */
+
+namespace App;
+
+use App\Blocks\BlockCategories;
+use App\Blocks\BlockManager;
+
+// Register the custom block category (filter — fires before init).
+BlockCategories::register();
+
+// Register all blocks once WP is ready.
+add_action('init', function () {
+    (new BlockManager())->register();
+});
+```
+
+#### `functions.php` — add `'blocks'` to the collect array
+
+Sage's `collect([...])` mechanism requires each named theme file
+(`app/<name>.php`) during boot. Add `'blocks'` so `app/blocks.php`
+actually loads:
+
+```diff
+-collect(['setup', 'filters'])
++collect(['setup', 'filters', 'blocks'])
+     ->each(function ($file) {
+         if (! locate_template($file = "app/{$file}.php", true, true)) {
+             // ...
+         }
+     });
+```
+
+If `functions.php` doesn't use the `collect([...])` pattern (heavily
+customized theme), **bail out** — the dev needs to wire it manually.
+
+#### `app/setup.php` — vendor libs only (no block bootstrap)
+
+No block-related code goes here anymore — `setup.php` keeps its stock
+Sage role (theme supports, nav menus, sidebars). Vendor libs still
+live here when introduced, since they're theme-level asset registration
+and not block-bootstrap per se:
+
+```php
 /**
  * Register vendor libs. Registration != enqueue — nothing loads here.
  * Each block's block.php that needs a lib calls wp_enqueue_script/style
@@ -645,13 +819,6 @@ add_action('init', function () {
     // wp_register_style('swiper',
     //     get_theme_file_uri('resources/css/vendor/swiper-bundle.min.css'),
     //     [], '11.0');
-});
-
-/**
- * Bootstrap the block manager. register_block_type must run on/after `init`.
- */
-add_action('init', function () {
-    (new \App\Blocks\BlockManager())->register();
 });
 ```
 
@@ -717,14 +884,24 @@ Add this line to the existing `@source` declarations:
 @source "../blocks/**/*.{php,jsx}";
 ```
 
-#### `package.json` — install React 18
+#### `package.json` — install required deps
 
-If `react` / `react-dom` aren't in `devDependencies`, tell the dev to run:
+If `react` / `react-dom` / `@wordpress/icons` aren't in `devDependencies`,
+tell the dev to run:
 
 ```bash
-npm install --save-dev react@^18.0.0 react-dom@^18.0.0
+npm install --save-dev react@^18.0.0 react-dom@^18.0.0 @wordpress/icons
 ```
 
-(Skill does **not** run `npm` itself — see Behavior Rules.) Pin to `^18`,
-not the latest — `^19` resolves to React 19 and breaks Gutenberg via the
-element-symbol mismatch with WP's React 18.
+(Skill does **not** run `npm` itself — see Behavior Rules.)
+
+Notes:
+- **React pinned to `^18`**, not the latest. `^19` resolves to React 19
+  which breaks Gutenberg via element-symbol mismatch (WP ships React 18;
+  React 19's `Symbol.for("react.transitional.element")` ≠ React 18's
+  `Symbol.for("react.element")`).
+- **`@wordpress/icons`** is needed because `RemoveButton.jsx` (shared
+  component) imports `trash` from it. `wordpressPlugin()` doesn't
+  externalize the `icons` package — without it installed, Rolldown errors
+  with `failed to resolve import "@wordpress/icons"`. Installed, it gets
+  tree-shaken (only used icons bundled).
