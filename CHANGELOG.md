@@ -4,7 +4,33 @@ Notable changes to the GritoWeb WordPress standards.
 
 ## 2026-05-24
 
+### Added
+- **`_docs/launch-list.md`** — pre-launch checklist for WordPress site
+  go-lives. Static markdown (no AI automation) with checkboxes grouped
+  into 11 categories: content cleanup, WordPress core settings, security,
+  SEO & indexing, performance, analytics & legal pages, email & forms,
+  required pages & layouts, validation (a11y + HTML validator),
+  Sage/Pantheon pre-deploy, last-mile manual smoke (including site
+  search, broken-link scan, cross-browser + device matrix). Items
+  tagged by severity: 🚫 Blocker (must fix before launch), ⚠️ Important
+  (fix ASAP after), 💡 Nice to have. Copied per project into
+  `<project>/_docs/launch-list.md`. README updated with the new file
+  location + the copy step for new projects.
+
 ### Changed
+- **`EXAMPLES.md` moved to `_docs/examples.md`** (lowercase, inside `_docs/`).
+  Root of a freshly-initialized project should only carry files that
+  *must* live there (`CLAUDE.md` for Claude auto-discovery; `.gitignore`
+  for git). Reference docs that the AI loads on demand belong in
+  `_docs/`. Updates:
+  - `README.md` rewrote the "How to use it on a new project" section
+    as an **import manifest table** (From / To / Notes) so an AI told
+    *"access this repo and import the kit"* can execute the placement
+    deterministically — no bash script required. Manual bash flow kept
+    as a fallback for devs who prefer it. Top-level file tree updated.
+  - `skills/create-block/SKILL.md` updated the two `EXAMPLES.md`
+    references to `_docs/examples.md`.
+  - Memory `project-init-kit.md` aligned.
 - **`skills/create-block/SKILL.md` trimmed 962 → ~620 lines** without
   losing semantics, after a context-efficiency review:
   - Fixed 3 stale references to `@wordpress/icons` — the package is no

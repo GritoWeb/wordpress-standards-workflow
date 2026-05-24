@@ -11,33 +11,60 @@ copy the standards in.
 ## What's here
 
 ```
-README.md                          # this file — the workflow + how to use the repo
-CLAUDE.md                          # the dev standard — copy to the project root
+README.md                          # this file — the workflow + import manifest
+CLAUDE.md                          # the dev standard — imported to the project root
 skills/
-  html-qa-smoketest/SKILL.md       # QA skill — copy to <project>/.claude/skills/
-  create-block/SKILL.md            # block scaffold skill — copy to <project>/.claude/skills/
-EXAMPLES.md                        # one complete reference block (code) for AI context
-gitignore.example                  # base .gitignore (WP + Sage 11 + Lando)
+  html-qa-smoketest/SKILL.md       # QA skill — imported to <project>/.claude/skills/
+  create-block/SKILL.md            # block scaffold skill — imported to <project>/.claude/skills/
+_docs/
+  examples.md                      # canonical reference block (code) — imported to <project>/_docs/
+  launch-list.md                   # pre-launch checklist — imported to <project>/_docs/
+gitignore.example                  # base .gitignore template — imported as <project>/.gitignore (only if missing)
 CHANGELOG.md                       # what changed in the standards
 ```
 
 ## How to use it on a new project
 
-After WordPress is up (see workflow below), from the project root:
+After WordPress is up (see workflow below), tell Claude (or any AI assistant):
+
+> *"Access this repo: `<URL of this repo>` and import the kit into this project."*
+
+The AI should fetch the repo and place every file according to the manifest
+below. No shell script needed — the manifest **is** the source of truth.
+
+### Import manifest
+
+| From (this repo) | To (your project) | Notes |
+|---|---|---|
+| `CLAUDE.md` | `./CLAUDE.md` | Must be at the project root — Claude auto-loads it from there |
+| `skills/html-qa-smoketest/` | `./.claude/skills/html-qa-smoketest/` | Copy the whole folder |
+| `skills/create-block/` | `./.claude/skills/create-block/` | Copy the whole folder |
+| `_docs/examples.md` | `./_docs/examples.md` | Reference patterns the AI uses for grounding |
+| `_docs/launch-list.md` | `./_docs/launch-list.md` | Pre-launch checklist for go-live |
+| `gitignore.example` | `./.gitignore` | **Only if** the project has no `.gitignore` yet — never overwrite |
+
+`README.md`, `CHANGELOG.md` and any other file at the kit's root are about
+the kit itself and are **not** imported into projects.
+
+### Doing it manually (if you prefer)
+
+If you'd rather copy by hand instead of asking the AI, from the project root:
 
 ```bash
 KIT=/path/to/this/repo
 
 cp "$KIT/CLAUDE.md" ./CLAUDE.md
-mkdir -p .claude/skills
+mkdir -p .claude/skills _docs
 cp -R "$KIT/skills/html-qa-smoketest" .claude/skills/
 cp -R "$KIT/skills/create-block" .claude/skills/
-# if the project has no .gitignore yet:
+cp "$KIT/_docs/examples.md"     ./_docs/examples.md
+cp "$KIT/_docs/launch-list.md"  ./_docs/launch-list.md
+# only if the project has no .gitignore yet:
 cp "$KIT/gitignore.example" ./.gitignore
 ```
 
-Then read [`EXAMPLES.md`](./EXAMPLES.md) — point the AI at it and at
-`CLAUDE.md` for context before generating code.
+Then point the AI at `_docs/examples.md` and `CLAUDE.md` for context before
+generating code.
 
 ---
 

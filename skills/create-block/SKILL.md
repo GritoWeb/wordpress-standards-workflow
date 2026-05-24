@@ -30,7 +30,7 @@ that themselves.
 - Working directory = active Sage 11 theme root (must contain `vite.config.js`,
   `app/setup.php`, `composer.json`, `resources/`). If unsure, **ask** — don't guess.
 - Composer/Node run on the host (Lando only serves WP).
-- Standards = `CLAUDE.md` + `EXAMPLES.md`. If those aren't in the project,
+- Standards = `CLAUDE.md` + `_docs/examples.md`. If those aren't in the project,
   treat this skill as the standard.
 
 ---
@@ -198,7 +198,7 @@ When uncertain, prefer the body — Inspector is hidden by default.
 
 ### What the skill does NOT ask
 
-**Vendor libs** are a deliberate dev decision, not block scaffolding. The skill generates blocks without lib boilerplate; if the dev adds Swiper etc. afterward, they follow the pattern in `EXAMPLES.md` (`wp_register_*` in `setup.php` + `wp_enqueue_*` in `block.php`). Phase 0's smell detector watches for the wrong pattern over time.
+**Vendor libs** are a deliberate dev decision, not block scaffolding. The skill generates blocks without lib boilerplate; if the dev adds Swiper etc. afterward, they follow the pattern in `_docs/examples.md` (`wp_register_*` in `setup.php` + `wp_enqueue_*` in `block.php`). Phase 0's smell detector watches for the wrong pattern over time.
 
 ### Validations (cheap, fail fast)
 
