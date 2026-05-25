@@ -6,12 +6,15 @@
 
 ## ⚠️ Critical Rules
 
-- **Never `git push` without permission** from the project owner.
-- **Never alter anything in production / a remote environment without me explicitly asking.** Read-only remote commands (Terminus, remote `wp-cli`) may be run freely; any write — `lando push`, `terminus` deploy/clone/wipe, remote `wp db` / `search-replace` / import — needs explicit permission. Run `lando pull` only when explicitly requested.
+- **Never `git push` without permission**.
+- **Never write to production / a remote environment without explicit permission.** Read-only commands (Terminus, remote `wp-cli`) are free; writes (`lando push`, `terminus` deploy/clone/wipe, remote `wp db`/`search-replace`/import) and `lando pull` need explicit ask.
+- **Never modify WordPress core or third-party plugin files** — only plugins we own. If unsure whether a plugin is ours, **stop and ask** (changes get wiped on the next update).
+- **Always maintain a `CHANGELOG.md`** in every theme/plugin we own that we touch. Create if missing; append entries following [Keep a Changelog](https://keepachangelog.com): `## [version] - YYYY-MM-DD` header, `Added` / `Changed` / `Fixed` / `Removed` subsections.
+- **Always version the theme and every plugin we own** using SemVer (`MAJOR.MINOR.PATCH`): MAJOR = breaking, MINOR = backwards-compatible feature, PATCH = fix. Version lives in the theme's `style.css` header and the plugin's main PHP file header. Every bump = one new `## [version] - YYYY-MM-DD` entry in `CHANGELOG.md`.
 - **Never add `Co-authored-by`** in commit messages.
-- **All commit messages, comments and variables must be in English.**
-- **Never make assumptions** — if anything is unclear or you are not sure, stop and ask for direction before acting.
-- **Don't just agree** — if a request or suggestion is flawed, push back and explain why instead of complying silently.
+- **English** for all commit messages, comments, and variables.
+- **Never assume** — when unclear, stop and ask.
+- **Don't just agree** — push back on flawed requests with explanation.
 
 ---
 
@@ -48,66 +51,57 @@ To create a new block, use the `create-block` SKILL. If it doesn't exist in the 
 
 ## CSS
 
-Use Tailwind utility classes directly for one-off styles. For reusable or semantic patterns, use `@apply` in a dedicated CSS class.
+Tailwind utilities for one-off styles; `@apply` in a dedicated class for reusable/semantic patterns.
+
+- Stick to Tailwind's default scale (`rem` for fonts, spacing). Arbitrary values only when strictly needed.
+- Every block has a **unique root class** named after the block (`.hero`, `.testimonials`) — scopes all its styles.
+- Nest selectors under the root. BEM (`__element--modifier`) only for complex blocks with many nested states.
 
 ```css
-.card-title {
-  @apply text-2xl font-bold leading-tight;
-}
-```
-
-- Always use Tailwind's default scale — `rem` for font sizes, spacing, etc. Avoid arbitrary values unless strictly necessary.
-- Every block must have a **unique root class** named after the block (e.g. `.hero`, `.testimonials`). This class acts as the encapsulation scope.
-- Nest selectors under the root class. BEM (`__element--modifier`) is only required for complex blocks with many nested states.
-
-```css
-/* Simple block — clean classes are fine */
+/* Simple block — clean classes */
 .hero { ... }
 .hero .title { ... }
 .hero .subtitle { ... }
 
-/* Complex block — use BEM */
+/* Complex block — BEM */
 .accordion__item { ... }
 .accordion__item--active { ... }
 .accordion__trigger { ... }
 ```
 
-- Never reuse generic class names (`.card`, `.box`, `.wrapper`) across different blocks.
-- Global CSS variables live in `resources/styles/variables.css`.
+- Never reuse generic class names (`.card`, `.box`, `.wrapper`) across blocks.
+- Global CSS variables in `resources/styles/variables.css`.
 
 ---
 
 ## PHP / Blade
 
-**Blade is view-only.** No business logic, no queries, no data fetching. Only logic that directly controls what is rendered (conditionals, loops over already-prepared data).
+**Blade is view-only.** No business logic, queries, or data fetching. Only render-control logic (conditionals, loops over already-prepared data).
 
-```php
-// Always declare the image size explicitly
-echo wp_get_attachment_image($image_id, 'large');   // ✅
-echo wp_get_attachment_image($image_id);            // ❌ never omit the size
-```
+- `wp_get_attachment_image($id, 'large')` — always include the size argument (enables native `srcset`); never omit it.
+- Avoid nested `WP_Query` inside loops.
 
-**Sanitization — always sanitize input and escape output:**
+**Sanitize input, escape output:**
 
 ```php
 // Input (saving data)
 sanitize_text_field($_POST['name']);
 sanitize_email($_POST['email']);
-wp_kses_post($_POST['content']);  // allows safe HTML
+wp_kses_post($_POST['content']);  // safe HTML
 absint($_POST['count']);
 
 // Output (rendering data)
 esc_html($value);        // plain text
 esc_attr($value);        // HTML attributes
 esc_url($url);           // URLs
-wp_kses_post($content);  // trusted HTML content
+wp_kses_post($content);  // trusted HTML
 ```
 
 ---
 
 ## Scripts & Styles
 
-All third-party scripts/styles must use `wp_register_script` / `wp_register_style` and be enqueued **at block level**, not globally.
+Third-party scripts/styles: **register globally** in `app/setup.php` (on `init`), then **enqueue per-block** inside that block's `block.php` render. Never enqueue vendor libs globally.
 
 ```php
 add_action('init', function () {
@@ -125,23 +119,15 @@ wp_enqueue_script('swiper');
 Good code is self-explanatory. **Comment why, never what.**
 
 ```php
-// ❌ $title = get_the_title($post->ID); // gets the post title
-
+// ❌ $title = get_the_title($id); // gets the post title
 // ✅ API returns null on private posts; fallback prevents fatal in template
-$title = get_the_title($post->ID) ?? get_bloginfo('name');
+$title = get_the_title($id) ?? get_bloginfo('name');
 ```
 
-- If a comment seems necessary, try renaming the variable or function first.
+- If a comment seems necessary, try renaming a variable or function first.
 - Stale comments are worse than no comments — delete when the code changes.
 - TODOs require owner and date: `// TODO @name YYYY-MM-DD: remove after migration`
-- Never commit commented-out code — that's what git is for.
-
----
-
-## Performance
-
-- Avoid nested `WP_Query` inside loops.
-- Always use `wp_get_attachment_image()` with an explicit size for native `srcset` support.
+- Never commit commented-out code.
 
 ---
 
@@ -152,5 +138,8 @@ $title = get_the_title($post->ID) ?? get_bloginfo('name');
 - [ ] Unique block root class, scoped styles
 - [ ] All inputs sanitized, all outputs escaped
 - [ ] Commit in English, no co-author, one subject
+- [ ] **`CHANGELOG.md` of the theme/plugin updated** with this PR's changes
+- [ ] **Version bumped** in the theme's `style.css` / plugin header following SemVer (MAJOR / MINOR / PATCH per the rule above)
 - [ ] Permission granted before pushing to `main`/`production`
 - [ ] **Did not alter anything in production without explicit permission**
+- [ ] **Did not alter WordPress core or third-party plugin files** (only plugins we own)

@@ -5,6 +5,27 @@ Notable changes to the GritoWeb WordPress standards.
 ## 2026-05-24
 
 ### Added
+- **`CLAUDE.md` › Critical Rules** — three new rules:
+  - "Never modify WordPress core files or third-party plugin files."
+    The only exception is plugins we own (built in-house); if uncertain
+    about ownership, stop and ask before editing. Rationale: any change
+    inside core or vendored plugins is wiped at the next update.
+  - "Always maintain a `CHANGELOG.md` in every theme and in every
+    plugin we own that we touch." Create it on first change if missing;
+    append an entry every subsequent change. Format = [Keep a
+    Changelog](https://keepachangelog.com) — header
+    `## [version] - YYYY-MM-DD`, subsections `Added` / `Changed` /
+    `Fixed` / `Removed`.
+  - "Always version the theme and every plugin we own" following SemVer
+    (`MAJOR.MINOR.PATCH`). MAJOR for breaking changes, MINOR for
+    backwards-compatible additions, PATCH for fixes. Version declared
+    in the theme's `style.css` header / the plugin's main PHP file
+    header; every bump corresponds to a new dated entry in the
+    `CHANGELOG.md`. Note: this versioning rule applies to
+    **downstream themes/plugins** that import these standards — this
+    standards repo itself is not versioned (no formal releases).
+  - Three matching items added to the PR Checklist (`CHANGELOG.md`
+    updated, version bumped, core/plugin files untouched).
 - **`_docs/launch-list.md`** — pre-launch checklist for WordPress site
   go-lives. Static markdown (no AI automation) with checkboxes grouped
   into 11 categories: content cleanup, WordPress core settings, security,
@@ -18,6 +39,18 @@ Notable changes to the GritoWeb WordPress standards.
   location + the copy step for new projects.
 
 ### Changed
+- **`CLAUDE.md` trimmed 168 → ~135 lines** (~20%) in a context-efficiency
+  pass — CLAUDE.md auto-loads on every conversation, so every cut
+  saves tokens repeatedly. Critical Rules tightened by removing
+  rationale tails ("the goal is…", "guessing wrong wastes…") and
+  inlining the SemVer sub-list; CSS section dropped the trivial
+  `.card-title` `@apply` example (basic knowledge for any Sage dev);
+  PHP/Blade replaced the standalone `wp_get_attachment_image` code
+  block with a one-line bullet; merged the 1-bullet `Performance`
+  section into PHP/Blade (the `WP_Query` rule joined the image rule).
+  Sanitization and `wp_register_*`/`wp_enqueue_*` code blocks were
+  **kept** — they're WP-specific patterns where exact function names
+  and ordering matter. No semantic changes; every rule preserved.
 - **`EXAMPLES.md` moved to `_docs/examples.md`** (lowercase, inside `_docs/`).
   Root of a freshly-initialized project should only carry files that
   *must* live there (`CLAUDE.md` for Claude auto-discovery; `.gitignore`
