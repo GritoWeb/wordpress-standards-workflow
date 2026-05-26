@@ -82,6 +82,7 @@ project's `_docs/` folder and tick items as you go.
 - [ ] ⚠️ Search results page exists with an explicit "no results" state
 - [ ] ⚠️ Every custom taxonomy either has an `archive` template **or** is consciously disabled (set `'has_archive' => false` in the registration)
 - [ ] 💡 Apple touch icon (`apple-touch-icon.png`) present in the root
+- [ ] 💡 `wp-login.php` logo replaced with the client's (or agency's) logo via `login_enqueue_scripts` + `login_headerurl` / `login_headertext` filters
 
 ## ♿ Validation
 

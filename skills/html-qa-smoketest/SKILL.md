@@ -126,7 +126,29 @@ If the user provides a URL (public or local), run:
 | SMOKE-5 | No element overlapping (z-index, modals, overlays) | ⚠️ Attention |
 | SMOKE-6 | Fonts loaded (no FOUT — Flash of Unstyled Text) | ⚠️ Attention |
 | SMOKE-7 | Colors and contrast visually acceptable | ⚠️ Attention |
-| SMOKE-8 | Console free of critical JS errors (if tool allows) | ⚠️ Attention |
+| SMOKE-8 | Console free of JS errors after load and after main interactions (click CTAs, open menu, submit form) | ❌ Critical |
+| SMOKE-9 | No failed network requests (4xx/5xx, blocked CORS, mixed content) | ❌ Critical |
+| SMOKE-10 | No deprecation warnings, CSP violations, or repeated console warnings | ⚠️ Attention |
+
+4. **Capture console + network** using one of the tools below (in order of preference):
+
+   **Option A — Chrome DevTools MCP (preferred when available):**
+   - Navigate to the URL
+   - Read `console.messages` after load and after each interaction
+   - Read `network.requests` and flag any with status ≥ 400 or `failed`
+
+   **Option B — Playwright MCP (fallback / CI / reproducible runs):**
+   ```js
+   const errors = [], failures = [];
+   page.on('console', m => m.type() === 'error' && errors.push(m.text()));
+   page.on('pageerror', e => errors.push(e.message));
+   page.on('response', r => r.status() >= 400 && failures.push(`${r.status()} ${r.url()}`));
+   page.on('requestfailed', r => failures.push(`${r.failure().errorText} ${r.url()}`));
+   await page.goto(url);
+   // trigger main interactions: menu, CTAs, form submit
+   ```
+
+   Report any captured errors/failures under the **🚬 Visual Smoke Test** section, grouped by `Console errors`, `Network failures`, `Warnings`.
 
 Report in the **🚬 Visual Smoke Test** section of the report, with screenshot attached if available.
 
